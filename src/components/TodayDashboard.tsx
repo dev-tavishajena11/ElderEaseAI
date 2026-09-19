@@ -16,6 +16,7 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
   medication,
   appointments,
   onTakeMedication,
+  onOpenScanner,
 }) => {
   const [isPlayingGreeting, setIsPlayingGreeting] = useState(false);
 
@@ -210,16 +211,27 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
           <h3 className="text-[22px] font-extrabold text-[#0A192F]">
             Upcoming Schedule
           </h3>
-          <span className="px-3 py-1 bg-[#E8EEFF] border border-[#1A56DB]/30 rounded-full text-[14px] font-extrabold text-[#1A56DB]">
-            {appointments.length} Remaining
-          </span>
+          <button
+            onClick={onOpenScanner}
+            id="today-open-scanner-btn"
+            className="flex items-center gap-1.5 px-3 py-1 bg-[#E8EEFF] hover:bg-[#d5e2ff] border border-[#1A56DB]/40 rounded-full text-[13px] font-extrabold text-[#1A56DB] transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Scan Medical Slip</span>
+          </button>
         </div>
 
         <div className="space-y-3">
           {appointments.map((appt) => (
             <div
               key={appt.id}
-              className={`bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${
+              onClick={onOpenScanner}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') onOpenScanner();
+              }}
+              className={`bg-white border-2 rounded-2xl p-4 shadow-xs hover:border-[#1A56DB] cursor-pointer transition-all ${
                 appt.isNew ? 'border-[#1A56DB] ring-2 ring-[#1A56DB]/30' : 'border-[#D1D5DB]'
               }`}
             >

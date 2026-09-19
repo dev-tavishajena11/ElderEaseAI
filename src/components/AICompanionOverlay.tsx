@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic,
   MicOff,
@@ -6,7 +6,8 @@ import {
   Volume2,
   Sparkles,
   ArrowRight,
-  Compass
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
 import { speechService } from '../services/speech';
 import { MedicationTask, AppointmentItem, ScreenTab } from '../types';
@@ -17,8 +18,16 @@ interface AICompanionOverlayProps {
   currentTab: ScreenTab;
   medication: MedicationTask;
   appointments: AppointmentItem[];
+  seniorName?: string;
+  caregiverName?: string;
   onTriggerSpotlight: (target: 'assist-nav' | 'emergency-nav' | 'today-card') => void;
   onNavigateToTab: (tab: ScreenTab) => void;
+}
+
+// Extend Window interface for Web Speech API
+interface IWindow extends Window {
+  SpeechRecognition?: any;
+  webkitSpeechRecognition?: any;
 }
 
 export const AICompanionOverlay: React.FC<AICompanionOverlayProps> = ({
@@ -27,6 +36,8 @@ export const AICompanionOverlay: React.FC<AICompanionOverlayProps> = ({
   currentTab,
   medication,
   appointments,
+  seniorName = 'Eleanor',
+  caregiverName = 'Sarah',
   onTriggerSpotlight,
   onNavigateToTab,
 }) => {
@@ -34,90 +45,199 @@ export const AICompanionOverlay: React.FC<AICompanionOverlayProps> = ({
   const [userQuery, setUserQuery] = useState('');
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [spotlightSuggestion, setSpotlightSuggestion] = useState<string | null>(null);
 
-  // Common elder queries for one-tap convenience
+  const recognitionRef = useRef<any>(null);
+
+  // Common senior queries for one-tap convenience
   const seniorPrompts = [
     'Did I take my blood pressure medicine today?',
     'What time is my doctor appointment?',
     'How do I add a new reminder?',
     'What should I do before my cardiology visit?',
-    'Call my daughter Sarah',
+    `Call my daughter ${caregiverName}`,
   ];
+
+  // Initialize Speech Recognition if supported in browser/iframe
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const win = window as unknown as IWindow;
+      const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
+      if (SpeechRecognitionClass) {
+        try {
+          const rec = new SpeechRecognitionClass();
+          rec.continuous = false;
+          rec.interimResults = true;
+          rec.lang = 'en-US';
+
+          rec.onresult = (event: any) => {
+            const transcript = Array.from(event.results)
+              .map((res: any) => res[0].transcript)
+              .join('');
+            setUserQuery(transcript);
+          };
+
+          rec.onend = () => {
+            setIsListening(false);
+          };
+
+          rec.onerror = () => {
+            setIsListening(false);
+          };
+
+          recognitionRef.current = rec;
+          setSpeechSupported(true);
+        } catch {
+          setSpeechSupported(false);
+        }
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      setIsListening(true);
       setUserQuery('');
       setAiResponse(null);
-      // Greet gently
-      speechService.speak("I'm listening, Eleanor. How can I help you today?", undefined, true);
+      setSpotlightSuggestion(null);
+      // Gentle conversational greeting
+      speechService.speak(`I'm listening, ${seniorName}. How can I help you today?`, undefined, true);
     } else {
-      setIsListening(false);
+      stopListening();
       speechService.stop();
     }
-  }, [isOpen]);
+  }, [isOpen, seniorName]);
 
-  if (!isOpen) return null;
+  const startListening = () => {
+    speechService.stop();
+    setIsListening(true);
+    setUserQuery('');
+    setAiResponse(null);
 
-  const processQuery = (query: string) => {
-    setUserQuery(query);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+        return;
+      } catch {
+        // Recognition might already be active
+      }
+    }
+    // If Web Speech is restricted by iframe permissions, prompt senior with audio
+    speechService.speak(`I am listening, ${seniorName}. You may also tap any question below.`);
+  };
+
+  const stopListening = () => {
     setIsListening(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+      if (userQuery.trim()) {
+        processQuery(userQuery);
+      }
+    } else {
+      startListening();
+    }
+  };
+
+  // Process query via secure Server-Side AI API with intelligent fallback
+  const processQuery = async (queryText: string) => {
+    if (!queryText.trim()) return;
+
+    stopListening();
+    setUserQuery(queryText);
     setIsProcessing(true);
+    setAiResponse(null);
 
-    setTimeout(() => {
-      setIsProcessing(false);
-      let answer = '';
+    try {
+      const response = await fetch('/api/companion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: queryText,
+          screenContext: {
+            currentTab,
+            medication,
+            appointments,
+            seniorName,
+            caregiverName,
+          },
+        }),
+      });
 
-      const lower = query.toLowerCase();
+      if (response.ok) {
+        const data = await response.json();
+        const text = data.response || `Everything is in order, ${seniorName}.`;
+        setAiResponse(text);
+        speechService.speak(text, undefined, true);
+
+        if (data.spotlightTarget) {
+          setSpotlightSuggestion(data.spotlightTarget);
+          onTriggerSpotlight(data.spotlightTarget);
+        }
+      } else {
+        throw new Error('Server response not ok');
+      }
+    } catch {
+      // Local graceful fallback if server or network has delay
+      let fallbackText = `I hear you, ${seniorName}. Everything is in order and your family is connected.`;
+      const lower = queryText.toLowerCase();
 
       if (lower.includes('blood pressure') || lower.includes('medicine') || lower.includes('pill')) {
         if (medication.status === 'taken') {
-          answer = "Yes, Eleanor! You took your blood pressure medicine this morning at 8:15 AM. It was recorded and confirmed with Sarah.";
+          fallbackText = `Yes, ${seniorName}! You took your blood pressure medicine this morning at ${medication.takenTimestamp || '8:15 AM'}. It was safely recorded and confirmed with ${caregiverName}.`;
         } else {
-          answer = "Not yet, Eleanor. You have your Blood Pressure pill due at 2:00 PM today after lunch. Remember to take one red tablet with water.";
+          fallbackText = `Not yet, ${seniorName}. You have your Blood Pressure pill due at 2:00 PM today after lunch. Remember to take one red tablet with water.`;
         }
       } else if (lower.includes('doctor') || lower.includes('appointment') || lower.includes('smith')) {
         const appt = appointments[0];
-        answer = `You have an appointment with ${appt.doctor} today at ${appt.time} for a ${appt.clinicNote}. Your ride is already confirmed!`;
-      } else if (lower.includes('how do i') || lower.includes('add a new reminder') || lower.includes('scanner') || lower.includes('scan')) {
-        answer = "Tap the blue camera button highlighted on your screen to scan a document, or tap the microphone to tell me what to add.";
-        // Trigger the animated Spotlight Ring on the assist scanner button!
+        if (appt) {
+          fallbackText = `You have an appointment with ${appt.doctor} today at ${appt.time} for a ${appt.clinicNote}. Your ride is confirmed!`;
+        }
+      } else if (lower.includes('how do i') || lower.includes('scan') || lower.includes('reminder')) {
+        fallbackText = 'Tap the blue camera button highlighted on your screen to scan your appointment slip or pill bottle.';
         onTriggerSpotlight('assist-nav');
-      } else if (lower.includes('before') || lower.includes('eat') || lower.includes('breakfast')) {
-        answer = "Important clinic note from Dr. Smith: Please do not eat breakfast before coming to your appointment.";
-      } else if (lower.includes('sarah') || lower.includes('daughter') || lower.includes('call')) {
-        answer = "I am preparing a quick call to your daughter Sarah at 555-0192.";
-      } else {
-        answer = `I hear you, Eleanor. Right now you are on the ${currentTab.toUpperCase()} screen. Everything is in order and your family is connected.`;
+        setSpotlightSuggestion('assist-nav');
       }
 
-      setAiResponse(answer);
-      speechService.speak(answer, undefined, true);
-    }, 600);
+      setAiResponse(fallbackText);
+      speechService.speak(fallbackText, undefined, true);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const handleSpotlightAction = () => {
-    onTriggerSpotlight('assist-nav');
-    onNavigateToTab('assist');
-    onClose();
-  };
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex flex-col justify-end max-w-md mx-auto animate-fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="companion-modal-title"
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex flex-col justify-end max-w-md mx-auto animate-fade-in"
+    >
       {/* Overlay Body Sheet */}
-      <div className="bg-[#FDFBF7] rounded-t-3xl border-t-3 border-[#1A56DB] p-5 shadow-2xl flex flex-col max-h-[85vh] overflow-y-auto">
+      <div className="bg-[#FDFBF7] rounded-t-3xl border-t-4 border-[#1A56DB] p-5 shadow-2xl flex flex-col max-h-[85vh] overflow-y-auto">
         {/* Top Bar */}
         <div className="flex items-center justify-between pb-3 border-b-2 border-gray-200">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#1A56DB] text-white flex items-center justify-center">
-              <Sparkles className="w-4 h-4" />
+            <div className="w-9 h-9 rounded-full bg-[#1A56DB] text-white flex items-center justify-center shadow-xs">
+              <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-[19px] font-black text-[#0A192F]">
+              <h2 id="companion-modal-title" className="text-[19px] font-black text-[#0A192F]">
                 ElderEase Companion
-              </h3>
+              </h2>
               <p className="text-[13px] font-bold text-[#1A56DB]">
-                Screen-Aware Voice Assistant
+                Screen-Aware Conversational Assistant
               </p>
             </div>
           </div>
@@ -125,140 +245,144 @@ export const AICompanionOverlay: React.FC<AICompanionOverlayProps> = ({
           <button
             onClick={onClose}
             id="companion-close-btn"
-            className="w-10 h-10 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-800 font-extrabold"
+            className="w-11 h-11 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-800 font-extrabold transition-colors focus-visible:ring-4 focus-visible:ring-[#1A56DB]"
             aria-label="Close Assistant"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Animated Circular Warmth Ring (Step 4.2 in spec) */}
-        <div className="py-6 flex flex-col items-center justify-center">
+        {/* Animated Circular Listening Hub */}
+        <div className="py-5 flex flex-col items-center justify-center">
           <div className="relative flex items-center justify-center">
             {/* Outer Expanding Waves */}
             <div
-              className={`absolute w-36 h-36 rounded-full bg-[#1A56DB]/15 transition-all duration-1000 ${
+              className={`absolute w-36 h-36 rounded-full bg-[#1A56DB]/20 transition-all duration-1000 ${
                 isListening ? 'animate-ping scale-110' : 'scale-95'
               }`}
             />
             <div
-              className={`absolute w-28 h-28 rounded-full bg-[#1A56DB]/25 transition-all duration-700 ${
+              className={`absolute w-28 h-28 rounded-full bg-[#1A56DB]/30 transition-all duration-700 ${
                 isListening ? 'scale-110' : 'scale-100'
               }`}
             />
             {/* Center Mic Hub */}
             <button
-              onClick={() => {
-                if (isListening) {
-                  setIsListening(false);
-                } else {
-                  setIsListening(true);
-                  setAiResponse(null);
-                  speechService.speak("I am listening, Eleanor.");
-                }
-              }}
+              onClick={toggleListening}
               id="companion-center-mic"
-              className={`relative z-10 w-20 h-20 rounded-full border-3 flex items-center justify-center text-white shadow-xl transition-all ${
+              aria-label={isListening ? 'Stop listening' : 'Start speaking'}
+              className={`relative z-10 w-20 h-20 rounded-full border-4 flex items-center justify-center text-white shadow-xl transition-all focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-blue-600 ${
                 isListening
-                  ? 'bg-[#1A56DB] border-[#0A192F] scale-105'
-                  : 'bg-emerald-600 border-[#0A192F]'
+                  ? 'bg-[#1A56DB] border-[#0A192F] scale-105 animate-pulse'
+                  : 'bg-emerald-600 border-[#0A192F] hover:bg-emerald-700'
               }`}
             >
               {isListening ? (
-                <Mic className="w-10 h-10 animate-pulse stroke-[2.5]" />
+                <Mic className="w-10 h-10 stroke-[2.5]" />
               ) : (
                 <MicOff className="w-9 h-9 stroke-[2]" />
               )}
             </button>
           </div>
 
-          <p className="text-[16px] font-extrabold text-[#1A56DB] mt-4 uppercase tracking-wider">
+          <p
+            aria-live="polite"
+            className="text-[16px] font-extrabold text-[#1A56DB] mt-4 uppercase tracking-wider text-center"
+          >
             {isListening
               ? 'Listening patiently to your voice...'
               : isProcessing
-              ? 'Checking your schedule...'
-              : 'Tap microphone to speak'}
+              ? 'Consulting your health schedule...'
+              : 'Tap the green microphone to speak'}
           </p>
         </div>
 
-        {/* Real-time Captioning & User Words (Step 4.2) */}
+        {/* Real-time Captioning & User Words */}
         {userQuery && (
           <div className="bg-[#E8EEFF] border-2 border-[#1A56DB] rounded-2xl p-4 mb-4">
             <p className="text-[13px] font-extrabold uppercase tracking-wide text-[#1A56DB]">
               You Asked:
             </p>
-            <p className="text-[23px] font-black text-[#0A192F] leading-snug mt-1">
+            <p className="text-[21px] font-black text-[#0A192F] leading-snug mt-1">
               &quot;{userQuery}&quot;
             </p>
           </div>
         )}
 
-        {/* Context-Extracted AI Response Card (Step 4.3) */}
-        {aiResponse && (
-          <div className="bg-white border-2 border-[#16A34A] rounded-2xl p-4 mb-4 shadow-md space-y-3 animate-fade-in">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-[14px] font-extrabold text-[#16A34A] uppercase">
-                <Volume2 className="w-4 h-4" /> Speaking Aloud (0.8x unhurried)
-              </span>
-              <button
-                onClick={() => speechService.speak(aiResponse, undefined, true)}
-                className="text-[13px] font-extrabold text-[#1A56DB] bg-[#E8EEFF] px-2.5 py-1 rounded-lg"
-              >
-                Replay
-              </button>
-            </div>
-
-            <p className="text-[20px] font-extrabold text-[#0A192F] leading-relaxed">
-              {aiResponse}
-            </p>
-
-            {/* If user asked how to add reminder, show Spotlight Action Button (Step 4.4) */}
-            {userQuery.toLowerCase().includes('how do i') ||
-            userQuery.toLowerCase().includes('add') ||
-            userQuery.toLowerCase().includes('reminder') ? (
-              <div className="pt-2 border-t border-gray-200">
-                <button
-                  onClick={handleSpotlightAction}
-                  id="spotlight-action-go-btn"
-                  className="w-full py-3 bg-[#1A56DB] hover:bg-[#1546b3] text-white rounded-xl font-extrabold text-[17px] flex items-center justify-center gap-2 EE-SpotlightRing shadow-md"
-                >
-                  <Compass className="w-5 h-5" />
-                  <span>Show me the Camera Scanner</span>
-                  <ArrowRight className="w-5 h-5" />
-                </button>
-              </div>
-            ) : null}
+        {/* Loading indicator */}
+        {isProcessing && (
+          <div className="flex items-center justify-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-2xl mb-4 text-[#1A56DB]">
+            <Loader2 className="w-6 h-6 animate-spin" />
+            <span className="text-[16px] font-bold">ElderEase AI is thinking...</span>
           </div>
         )}
 
-        {/* Suggested Senior Questions (Quick Tap for ease of use) */}
-        <div>
-          <p className="text-[14px] font-extrabold text-gray-600 mb-2">
-            Or tap a question:
+        {/* Context-Extracted AI Response Card */}
+        {aiResponse && !isProcessing && (
+          <div
+            role="region"
+            aria-label="Assistant Response"
+            className="bg-white border-2 border-[#16A34A] rounded-2xl p-4 mb-4 shadow-md space-y-3 animate-fade-in"
+          >
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-[14px] font-extrabold text-[#16A34A] uppercase tracking-wide">
+                <Sparkles className="w-4 h-4" />
+                ElderEase Answer
+              </span>
+              <button
+                onClick={() => speechService.speak(aiResponse, undefined, true)}
+                id="companion-repeat-voice-btn"
+                className="flex items-center gap-1 text-[13px] font-extrabold text-[#1A56DB] bg-[#E8EEFF] hover:bg-[#d5e2ff] px-2.5 py-1 rounded-full transition-colors"
+                aria-label="Listen again"
+              >
+                <Volume2 className="w-4 h-4" />
+                <span>Hear Again</span>
+              </button>
+            </div>
+
+            <p className="text-[20px] font-bold text-[#0A192F] leading-relaxed">
+              {aiResponse}
+            </p>
+
+            {/* Smart Action Guidance if Spotlight was Triggered */}
+            {spotlightSuggestion === 'assist-nav' && (
+              <button
+                onClick={() => {
+                  onNavigateToTab('assist');
+                  onClose();
+                }}
+                id="companion-go-scanner-btn"
+                className="w-full bg-[#1A56DB] hover:bg-[#1546b3] text-white font-extrabold text-[16px] py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md transition-colors"
+              >
+                <span>Open Camera Scanner Now</span>
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Quick Question Chips */}
+        <div className="mt-1 space-y-2">
+          <p className="text-[13px] font-extrabold uppercase tracking-wider text-gray-500">
+            Or Tap a Question to Ask:
           </p>
           <div className="space-y-2">
             {seniorPrompts.map((promptText, idx) => (
               <button
                 key={idx}
                 onClick={() => processQuery(promptText)}
-                className="w-full text-left p-3 rounded-xl bg-white border-2 border-[#D1D5DB] hover:border-[#1A56DB] hover:bg-[#F0F3FF] text-[16px] font-extrabold text-[#0A192F] flex items-center justify-between transition-all"
+                disabled={isProcessing}
+                className="w-full text-left bg-white hover:bg-[#F0F3FF] active:bg-[#E8EEFF] border-2 border-gray-200 hover:border-[#1A56DB] rounded-2xl p-3.5 transition-all text-[#0A192F] flex items-center justify-between group shadow-xs focus-visible:ring-4 focus-visible:ring-[#1A56DB]"
               >
-                <span>&quot;{promptText}&quot;</span>
-                <ArrowRight className="w-4 h-4 text-[#1A56DB] flex-shrink-0 ml-2" />
+                <span className="text-[16px] font-bold leading-snug pr-2">
+                  {promptText}
+                </span>
+                <div className="w-8 h-8 rounded-full bg-gray-100 group-hover:bg-[#1A56DB] group-hover:text-white flex items-center justify-center shrink-0 transition-colors">
+                  <ArrowRight className="w-4 h-4" />
+                </div>
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Close Button */}
-        <div className="mt-5">
-          <button
-            onClick={onClose}
-            id="companion-done-btn"
-            className="w-full h-[58px] bg-gray-200 hover:bg-gray-300 text-[#0A192F] rounded-2xl font-extrabold text-[18px] flex items-center justify-center gap-2"
-          >
-            <span>Close Assistant</span>
-          </button>
         </div>
       </div>
     </div>

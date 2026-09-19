@@ -374,6 +374,8 @@ export default function App() {
           currentTab={currentTab}
           medication={medication}
           appointments={appointments}
+          seniorName={preferences.userName}
+          caregiverName={preferences.caregiverName}
           onTriggerSpotlight={handleSpotlightTrigger}
           onNavigateToTab={(tab) => setCurrentTab(tab)}
         />

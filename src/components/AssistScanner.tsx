@@ -58,7 +58,8 @@ export const AssistScanner: React.FC<AssistScannerProps> = ({
     type: 'pill_bottle',
   };
 
-  const currentDoc = activeDocType === 'pill' ? pillDoc : clinicDoc;
+  const [serverDoc, setServerDoc] = useState<ScannedDocumentResult | null>(null);
+  const currentDoc = serverDoc || (activeDocType === 'pill' ? pillDoc : clinicDoc);
 
   // Live camera stream handling if user chooses real camera
   useEffect(() => {
@@ -92,15 +93,32 @@ export const AssistScanner: React.FC<AssistScannerProps> = ({
     }
   }, [preferences.speakAloud]);
 
-  const handleSnapPhoto = () => {
+  const handleSnapPhoto = async () => {
     setIsScanning(true);
     speechService.playSuccessChime();
-    setTimeout(() => {
-      setIsScanning(false);
+
+    try {
+      const res = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docHint: activeDocType }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setServerDoc(data);
+        setHasScanned(true);
+        const summary = `Doctor: ${data.doctor}. Date and Time: ${data.dateTime}. Important Clinic Note: ${data.clinicNote}`;
+        speechService.speak(summary, undefined, true);
+      } else {
+        throw new Error('Scan failed');
+      }
+    } catch {
       setHasScanned(true);
       const summary = `Doctor: ${currentDoc.doctor}. Date and Time: ${currentDoc.dateTime}. Important Clinic Note: ${currentDoc.clinicNote}`;
       speechService.speak(summary, undefined, true);
-    }, 900);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const handleReplaySummary = () => {

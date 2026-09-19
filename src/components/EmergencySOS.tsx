@@ -165,18 +165,23 @@ export const EmergencySOS: React.FC<EmergencySOSProps> = ({
       {!isDispatched ? (
         <button
           onClick={handleCancel}
+          disabled={isCanceled}
           id="emergency-cancel-btn"
-          className="w-full min-h-[96px] bg-[#16A34A] hover:bg-[#13833a] active:bg-[#0f6b2e] text-white rounded-3xl border-3 border-[#0F172A] tactile-btn-green p-4 flex items-center justify-center gap-4 transition-all shadow-lg"
+          className={`w-full min-h-[96px] ${
+            isCanceled
+              ? 'bg-gray-700 border-gray-900 cursor-default'
+              : 'bg-[#16A34A] hover:bg-[#13833a] active:bg-[#0f6b2e] border-[#0F172A] tactile-btn-green'
+          } text-white rounded-3xl border-3 p-4 flex items-center justify-center gap-4 transition-all shadow-lg`}
         >
           <div className="w-12 h-12 rounded-2xl bg-white/20 border border-white flex items-center justify-center flex-shrink-0">
             <CheckCircle className="w-8 h-8 text-white stroke-[2.5]" />
           </div>
           <div className="text-left">
             <span className="block text-[24px] font-black tracking-tight leading-tight">
-              CANCEL EMERGENCY
+              {isCanceled ? 'EMERGENCY CANCELED' : 'CANCEL EMERGENCY'}
             </span>
             <span className="block text-[15px] font-bold text-green-100">
-              Tap here if this was an accident
+              {isCanceled ? 'You are safe. Standing down.' : 'Tap here if this was an accident'}
             </span>
           </div>
         </button>
