@@ -1,0 +1,6 @@
+{
+  "name": "ElderEase AI",
+  "description": "Screen-aware conversational AI assistant designed for senior citizens with voice guidance, medication tracking, smart document scanner, and emergency SOS.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
