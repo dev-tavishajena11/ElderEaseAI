@@ -120,4 +120,66 @@ describe('AICompanionOverlay Component', () => {
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalledTimes(1);
   });
+
+  it('executes automated UI action when take medication intent is returned', async () => {
+    const handleTakeMedication = vi.fn();
+    global.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            response: 'I have marked your Blood Pressure Pill as taken.',
+            executedAction: 'TAKE_MEDICATION',
+            actionLabel: 'Marked Blood Pressure Pill as Taken',
+            source: 'gemini',
+          }),
+      })
+    );
+
+    render(
+      <AICompanionOverlay
+        isOpen={true}
+        onClose={vi.fn()}
+        currentTab="today"
+        medication={mockMedication}
+        appointments={mockAppointments}
+        onTriggerSpotlight={vi.fn()}
+        onNavigateToTab={vi.fn()}
+        onTakeMedication={handleTakeMedication}
+      />
+    );
+
+    const takePillPrompt = screen.getByRole('button', {
+      name: /I took my blood pressure pill just now/i,
+    });
+    fireEvent.click(takePillPrompt);
+
+    await waitFor(() => {
+      expect(handleTakeMedication).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/Automated UI Action Executed/i)).toBeInTheDocument();
+      expect(screen.getByText(/Marked Blood Pressure Pill as Taken/i)).toBeInTheDocument();
+    });
+  });
+
+  it('reads active screen aloud when Read Screen button is tapped', () => {
+    render(
+      <AICompanionOverlay
+        isOpen={true}
+        onClose={vi.fn()}
+        currentTab="today"
+        medication={mockMedication}
+        appointments={mockAppointments}
+        onTriggerSpotlight={vi.fn()}
+        onNavigateToTab={vi.fn()}
+      />
+    );
+
+    const readScreenBtn = screen.getByRole('button', {
+      name: /Read Active Screen Out Loud/i,
+    });
+    fireEvent.click(readScreenBtn);
+
+    expect(screen.getByText(/Active Screen Content Read Aloud/i)).toBeInTheDocument();
+    expect(screen.getByText(/Active screen: Today Dashboard/i)).toBeInTheDocument();
+  });
 });

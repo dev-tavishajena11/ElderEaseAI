@@ -1,6 +1,11 @@
 {
   "name": "ElderEase AI",
-  "description": "Screen-aware conversational AI assistant designed for senior citizens with voice guidance, medication tracking, smart document scanner, and emergency SOS.",
-  "requestFramePermissions": ["camera", "microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "description": "ElderEase AI is an accessibility-focused, multimodal conversational system designed to lower digital literacy barriers for older adults. By combining real-time screen awareness, natural language processing, and automated UI execution, it translates complex mobile and desktop interfaces into dynamic audio-visual guidance.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

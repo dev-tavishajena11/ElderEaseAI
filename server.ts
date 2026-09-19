@@ -130,18 +130,82 @@ Guidelines:
 
       const responseText = response.text?.trim() || '';
 
-      // Determine spotlight action if navigation guidance was requested
+      // Automated UI execution detection
+      let executedAction: string | null = null;
+      let actionLabel: string | null = null;
       let spotlightTarget: string | undefined = undefined;
       const lowerQuery = sanitizedQuery.toLowerCase();
-      if (lowerQuery.includes('scan') || lowerQuery.includes('add') || lowerQuery.includes('reminder') || lowerQuery.includes('letter')) {
+
+      if (
+        lowerQuery.includes('took my medicine') ||
+        lowerQuery.includes('take my pill') ||
+        lowerQuery.includes('mark medication') ||
+        lowerQuery.includes('took my pill') ||
+        lowerQuery.includes('already took') ||
+        lowerQuery.includes('mark as taken')
+      ) {
+        executedAction = 'TAKE_MEDICATION';
+        actionLabel = 'Marked Blood Pressure Pill as Taken';
+      } else if (
+        lowerQuery.includes('open scanner') ||
+        lowerQuery.includes('scan document') ||
+        lowerQuery.includes('scan my paper') ||
+        lowerQuery.includes('scan clinic') ||
+        lowerQuery.includes('scan bottle')
+      ) {
+        executedAction = 'NAVIGATE_SCANNER';
+        actionLabel = 'Opened Assist Scanner';
         spotlightTarget = 'assist-nav';
-      } else if (lowerQuery.includes('emergency') || lowerQuery.includes('help') || lowerQuery.includes('sos')) {
+      } else if (
+        lowerQuery.includes('go home') ||
+        lowerQuery.includes('home screen') ||
+        lowerQuery.includes('today screen') ||
+        lowerQuery.includes('dashboard')
+      ) {
+        executedAction = 'NAVIGATE_TODAY';
+        actionLabel = 'Navigated to Today Dashboard';
+      } else if (
+        lowerQuery.includes('emergency') ||
+        lowerQuery.includes('call 911') ||
+        lowerQuery.includes('help me') ||
+        lowerQuery.includes('sos')
+      ) {
+        executedAction = 'TRIGGER_SOS';
+        actionLabel = 'Triggered Emergency SOS';
         spotlightTarget = 'emergency-nav';
+      } else if (
+        lowerQuery.includes('read screen') ||
+        lowerQuery.includes('read my screen') ||
+        lowerQuery.includes('what is on my screen') ||
+        lowerQuery.includes('read aloud')
+      ) {
+        executedAction = 'READ_SCREEN';
+        actionLabel = 'Reading Active Screen Content';
+      } else if (
+        lowerQuery.includes('bigger text') ||
+        lowerQuery.includes('increase font') ||
+        lowerQuery.includes('larger text') ||
+        lowerQuery.includes('make text bigger')
+      ) {
+        executedAction = 'INCREASE_TEXT';
+        actionLabel = 'Switched to Extra-Large Text Size';
+      } else if (
+        lowerQuery.includes('toggle voice') ||
+        lowerQuery.includes('mute voice') ||
+        lowerQuery.includes('turn off voice') ||
+        lowerQuery.includes('turn on voice')
+      ) {
+        executedAction = 'TOGGLE_VOICE';
+        actionLabel = 'Toggled Voice Guidance';
+      } else if (lowerQuery.includes('scan') || lowerQuery.includes('add') || lowerQuery.includes('reminder') || lowerQuery.includes('letter')) {
+        spotlightTarget = 'assist-nav';
       }
 
       return res.json({
         response: responseText,
         spotlightTarget,
+        executedAction,
+        actionLabel,
         source: 'gemini',
       });
     }
@@ -149,9 +213,54 @@ Guidelines:
     // Graceful fallback if GEMINI_API_KEY is not configured
     let fallbackAnswer = `I hear you, ${seniorName}. Everything is in order and your daughter ${caregiverName} is safely connected.`;
     let fallbackSpotlight: string | undefined = undefined;
+    let executedAction: string | null = null;
+    let actionLabel: string | null = null;
 
     const lower = sanitizedQuery.toLowerCase();
-    if (lower.includes('blood pressure') || lower.includes('medicine') || lower.includes('pill')) {
+    if (
+      lower.includes('took my medicine') ||
+      lower.includes('take my pill') ||
+      lower.includes('mark medication') ||
+      lower.includes('took my pill') ||
+      lower.includes('already took') ||
+      lower.includes('mark as taken')
+    ) {
+      executedAction = 'TAKE_MEDICATION';
+      actionLabel = 'Marked Blood Pressure Pill as Taken';
+      fallbackAnswer = `Wonderful, ${seniorName}! I have automatically marked your Blood Pressure Pill as taken and updated your records for ${caregiverName}.`;
+    } else if (
+      lower.includes('open scanner') ||
+      lower.includes('scan document') ||
+      lower.includes('scan my paper')
+    ) {
+      executedAction = 'NAVIGATE_SCANNER';
+      actionLabel = 'Opened Assist Scanner';
+      fallbackSpotlight = 'assist-nav';
+      fallbackAnswer = `Opening the Assist Scanner for you now, ${seniorName}. You can point your camera at any clinic letter or prescription.`;
+    } else if (
+      lower.includes('emergency') ||
+      lower.includes('call 911') ||
+      lower.includes('sos')
+    ) {
+      executedAction = 'TRIGGER_SOS';
+      actionLabel = 'Triggered Emergency SOS';
+      fallbackSpotlight = 'emergency-nav';
+      fallbackAnswer = `Opening Emergency SOS immediately. Help is one tap away.`;
+    } else if (
+      lower.includes('read screen') ||
+      lower.includes('read my screen') ||
+      lower.includes('what is on my screen')
+    ) {
+      executedAction = 'READ_SCREEN';
+      actionLabel = 'Reading Active Screen Content';
+      if (currentTab === 'today') {
+        fallbackAnswer = `Reading your Today screen: You have 1 medication task: Blood Pressure Pill, which is ${medication?.status === 'taken' ? 'already taken' : 'due at 2:00 PM'}. You have an appointment with Dr. Smith at 10:00 AM. Remember not to eat breakfast beforehand.`;
+      } else if (currentTab === 'assist') {
+        fallbackAnswer = `Reading Assist Scanner screen: Camera viewfinder is active. Tap the blue Snap Photo button to read your clinic letter or pill bottle.`;
+      } else {
+        fallbackAnswer = `Reading Emergency screen: Countdown timer is ready. Tap Cancel if this was an accidental press.`;
+      }
+    } else if (lower.includes('blood pressure') || lower.includes('medicine') || lower.includes('pill')) {
       if (medication?.status === 'taken') {
         fallbackAnswer = `Yes, ${seniorName}! You took your blood pressure medicine this morning at ${medication.takenTimestamp || '8:15 AM'}. It was safely recorded.`;
       } else {
@@ -176,6 +285,8 @@ Guidelines:
     return res.json({
       response: fallbackAnswer,
       spotlightTarget: fallbackSpotlight,
+      executedAction,
+      actionLabel,
       source: 'fallback',
     });
   } catch (error) {
@@ -290,7 +401,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { maxAge: '1d', etag: true }));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });

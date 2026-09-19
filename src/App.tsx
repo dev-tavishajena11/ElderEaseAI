@@ -10,6 +10,7 @@ import { AssistScanner } from './components/AssistScanner';
 import { EmergencySOS } from './components/EmergencySOS';
 import { AICompanionOverlay } from './components/AICompanionOverlay';
 import { CaregiverPortalModal } from './components/CaregiverPortalModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   ScreenTab,
   OnboardingStep,
@@ -199,12 +200,13 @@ export default function App() {
   };
 
   return (
-    <div
-      className={`min-h-screen bg-[#FDFBF7] text-[#0A192F] flex flex-col font-sans selection:bg-[#1A56DB] selection:text-white ${
-        preferences.textSize === 'xl' ? 'text-[20px]' : 'text-[17px]'
-      }`}
-    >
-      {/* Quick Stage Switcher Bar (Senior & Reviewer Friendly) */}
+    <ErrorBoundary>
+      <div
+        className={`min-h-screen bg-[#FDFBF7] text-[#0A192F] flex flex-col font-sans selection:bg-[#1A56DB] selection:text-white ${
+          preferences.textSize === 'xl' ? 'text-[20px]' : 'text-[17px]'
+        }`}
+      >
+        {/* Quick Stage Switcher Bar (Senior & Reviewer Friendly) */}
       <div className="bg-[#0F172A] text-white py-1.5 px-3 border-b border-gray-800">
         <div className="max-w-md mx-auto flex items-center justify-between text-[13px] font-bold">
           <span className="text-gray-400 uppercase tracking-wider text-[11px] font-extrabold hidden xs:inline">
@@ -378,6 +380,10 @@ export default function App() {
           caregiverName={preferences.caregiverName}
           onTriggerSpotlight={handleSpotlightTrigger}
           onNavigateToTab={(tab) => setCurrentTab(tab)}
+          onTakeMedication={handleTakeMedication}
+          onToggleVoice={handleToggleVoice}
+          onToggleTextSize={handleToggleTextSize}
+          onOpenCaregiverModal={() => setIsCaregiverModalOpen(true)}
         />
 
         {/* CAREGIVER REAL-TIME SYNC PORTAL MODAL */}
@@ -390,5 +396,6 @@ export default function App() {
         />
       </div>
     </div>
+    </ErrorBoundary>
   );
 }
